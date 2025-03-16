@@ -160,12 +160,9 @@ func main() {
 	}()
 	go func() {
 		inputDone <- terminal.Input(printInputCh, writeCh)
-		close(printInputCh)
 	}()
 	go func() {
 		readDone <- client.ReadIncome(conn, contactAddr, printIncomCh, writeCh, lastReadTimeCh)
-		close(printIncomCh)
-		close(lastReadTimeCh)
 	}()
 	go func() {
 		writeDone <- client.WriteOut(ctx, conn, contactAddr, writeCh)
@@ -188,11 +185,7 @@ func main() {
 			fmt.Println("connection timeout")
 			return
 
-		case _, ok := <-lastReadTimeCh:
-			if !ok {
-				return
-			}
-			err = nil
+		case <-lastReadTimeCh:
 			timeoutTimer.Reset(timeout)
 
 		case <-printDone:
@@ -203,7 +196,7 @@ func main() {
 
 		case err = <-readDone:
 			if err == nil {
-				fmt.Println("contact exit")
+				fmt.Println("contact disconnected")
 			}
 			return
 

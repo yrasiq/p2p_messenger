@@ -9,7 +9,6 @@ import (
 	"os"
 	"strings"
 	"time"
-	"unicode/utf8"
 
 	"github.com/yrasiq/p2p_messenger/client"
 )
@@ -89,18 +88,17 @@ func PrintMessages(incCh, outCh <-chan string) {
 }
 
 func Input(output chan<- string, writeCh chan<- []byte) error {
-	var input []rune
+	var input []byte
 	for {
-		b := make([]byte, 4)
+		b := make([]byte, 1)
 		n, err := os.Stdin.Read(b)
 		if err != nil {
 			return err
 		}
-		if n > 4 {
+		if n == 0 {
 			return errors.New("input error")
 		}
-		r, _ := utf8.DecodeRune(b[:n])
-		switch r {
+		switch b[0] {
 		case '\x03', '\x04':
 			return nil
 
@@ -111,16 +109,17 @@ func Input(output chan<- string, writeCh chan<- []byte) error {
 			msg := client.MakeMessage(string(input))
 			writeCh <- msg.Bytes()
 			output <- fmt.Sprintf("%s   me: %s\r\n", msg.Time.Format("2006-01-02 15:04:05"), msg.Str)
-			input = []rune{}
+			input = []byte{}
 			continue
 
 		case '\b', 127:
-			if len(input) > 0 {
-				input = input[:len(input)-1]
+			r := []rune(string(input))
+			if len(r) > 0 {
+				input = []byte(string(r[:len(r)-1]))
 			}
 
 		default:
-			input = append(input, r)
+			input = append(input, b[0])
 		}
 		output <- string(input)
 	}
