@@ -1,0 +1,38 @@
+linters-settings:
+  errcheck:
+    check-type-assertions: true
+    check-blank: true
+  gosimple:
+    checks: ["all"]
+  govet:
+    enable-all: true
+    disable:
+      - fieldalignment
+  staticcheck:
+    checks: ["all"]
+  gocritic:
+    enable-all: true
+    disabled-checks:
+      - commentFormatting
+      - singleCaseSwitch
+      - commentedOutCode
+      - unnamedResult
+    settings:
+      ifElseChain:
+        minThreshold: 4
+      hugeParam:
+        sizeThreshold: 1024 # 1kb
+      rangeValCopy:
+        sizeThreshold: 1024 # 1kb
+
+linters:
+  disable-all: true
+  enable:
+    - whitespace
+    - errcheck
+    - gosimple
+    - govet
+    - ineffassign
+    - staticcheck
+    - gocritic
+    - unused

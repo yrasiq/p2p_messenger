@@ -1,0 +1,6 @@
+github.com/yrasiq/udp_holepunch v0.0.0-20250316122745-d7b728e260da h1:nBmlv51lxuId5ldEM8SQKt3lu/D3Bn9+3c4eKqWXnDU=
+github.com/yrasiq/udp_holepunch v0.0.0-20250316122745-d7b728e260da/go.mod h1:SI0ge7H4XthoCflnnOMq5puooaRt+Wqb8t9BhZqwNRg=
+golang.org/x/sys v0.31.0 h1:ioabZlmFYtWhL+TRYpcnNlLwhyxaM9kWTDEmfnprqik=
+golang.org/x/sys v0.31.0/go.mod h1:BJP2sWEmIv4KK5OTEluFJCKSidICx8ciO85XgH3Ak8k=
+golang.org/x/term v0.30.0 h1:PQ39fJZ+mfadBm0y5WlL4vlM7Sx1Hgf13sMIY2+QS9Y=
+golang.org/x/term v0.30.0/go.mod h1:NYYFdzHoI5wRh/h5tDMdMqCqPJZEuNqVR5xJLd/n67g=
