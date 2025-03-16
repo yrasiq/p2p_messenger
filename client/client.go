@@ -178,7 +178,7 @@ func Connect(conn *net.UDPConn, rAddrs []*net.UDPAddr) (*net.UDPAddr, error) {
 	}
 }
 
-func ReadIncome(conn *net.UDPConn, contactAddr *net.UDPAddr, printCh chan<- string, writeCh chan<- []byte) error {
+func ReadIncome(conn *net.UDPConn, contactAddr net.Addr, printCh chan<- string, writeCh chan<- []byte) error {
 	rcvBuff := make([]byte, 1024)
 	for {
 		n, addr, err := conn.ReadFrom(rcvBuff)
