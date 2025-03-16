@@ -15,20 +15,21 @@ import (
 )
 
 const (
-	connReq = 0x01
-	connRes = 0x02
-	msgReq  = 0x03
-	msgRes  = 0x04
+	connReq   = 0x01
+	connRes   = 0x02
+	msgReq    = 0x03
+	msgRes    = 0x04
+	connClose = 0x05
 )
 
 type id [16]byte
 
 func makeId() id {
-	var id id
-	if _, err := rand.Read(id[:]); err != nil {
+	var id_ id
+	if _, err := rand.Read(id_[:]); err != nil {
 		panic(err)
 	}
-	return id
+	return id_
 }
 
 type connectRequest id
@@ -46,6 +47,15 @@ func (cr connectResponse) Bytes() []byte {
 	b := make([]byte, 17)
 	b[0] = connRes
 	copy(b[1:], cr[:])
+	return b
+}
+
+type connectClose id
+
+func (cc connectClose) Bytes() []byte {
+	b := make([]byte, 17)
+	b[0] = connClose
+	copy(b[1:], cc[:])
 	return b
 }
 
@@ -89,8 +99,8 @@ func fromBytesMessage(b []byte) (*message, error) {
 func (m message) Bytes() []byte {
 	b := make([]byte, 25+len(m.Str))
 	b[0] = msgReq
-	id := makeId()
-	copy(b[1:17], id[:])
+	id_ := makeId()
+	copy(b[1:17], id_[:])
 	binary.BigEndian.PutUint64(b[17:25], uint64(m.Time.Unix()))
 	copy(b[25:], m.Str)
 	return b
@@ -132,7 +142,11 @@ func Connect(conn *net.UDPConn, rAddrs []*net.UDPAddr) (*net.UDPAddr, error) {
 			if log.LogLvl.Level() <= slog.LevelDebug {
 				fmt.Printf("\n%s\n", hex.Dump(rcvBuff[:n]))
 			}
-			connAddr = addr.(*net.UDPAddr)
+			var ok bool
+			connAddr, ok = addr.(*net.UDPAddr)
+			if !ok {
+				continue
+			}
 			if _, ok := rAddrsMap[addr.String()]; !ok {
 				continue
 			}
@@ -147,6 +161,10 @@ func Connect(conn *net.UDPConn, rAddrs []*net.UDPAddr) (*net.UDPAddr, error) {
 			if headers.type_ == connRes && headers.id == id(req) {
 				reqRecieved = true
 			}
+			if headers.type_ == connClose {
+				connAddr = nil
+				return
+			}
 		}
 	}()
 
@@ -154,13 +172,19 @@ func Connect(conn *net.UDPConn, rAddrs []*net.UDPAddr) (*net.UDPAddr, error) {
 	for i := 0; ; i = (i + 1) % len(rAddrs) {
 		n, err := conn.WriteTo(b, rAddrs[i])
 		if err != nil {
-			conn.SetReadDeadline(time.Now())
+			errDeadLine := conn.SetReadDeadline(time.Now())
+			if errDeadLine != nil {
+				panic(errDeadLine)
+			}
 			for range <-writeCh {
 			}
 			return nil, err
 		}
 		if n != len(b) {
-			conn.SetReadDeadline(time.Now())
+			errDeadLine := conn.SetReadDeadline(time.Now())
+			if errDeadLine != nil {
+				panic(errDeadLine)
+			}
 			for range <-writeCh {
 			}
 			return nil, errors.New("error in sending data")
@@ -178,7 +202,12 @@ func Connect(conn *net.UDPConn, rAddrs []*net.UDPAddr) (*net.UDPAddr, error) {
 	}
 }
 
-func ReadIncome(conn *net.UDPConn, contactAddr net.Addr, printCh chan<- string, writeCh chan<- []byte) error {
+func Disconnect(conn *net.UDPConn, contactAddr net.Addr) error {
+	_, err := conn.WriteTo(connectClose(makeId()).Bytes(), contactAddr)
+	return err
+}
+
+func ReadIncome(conn *net.UDPConn, contactAddr net.Addr, printCh chan<- string, writeCh chan<- []byte, lastPacketTimeCh chan<- time.Time) error {
 	rcvBuff := make([]byte, 1024)
 	for {
 		n, addr, err := conn.ReadFrom(rcvBuff)
@@ -192,6 +221,7 @@ func ReadIncome(conn *net.UDPConn, contactAddr net.Addr, printCh chan<- string, 
 			log.Logger.Warn(fmt.Sprintf("recieved data from unexpected adress %s", addr))
 			continue
 		}
+		lastPacketTimeCh <- time.Now()
 		if n < 17 {
 			log.Logger.Error("invalid data")
 			continue
@@ -213,12 +243,15 @@ func ReadIncome(conn *net.UDPConn, contactAddr net.Addr, printCh chan<- string, 
 			}
 			printCh <- fmt.Sprintf("%s they: %s\r\n", msg.Time.Format("2006-01-02 15:04:05"), msg.Str)
 			writeCh <- messageResponse(h.id[:]).Bytes()
+
+		case connClose:
+			return nil
 		}
 	}
 }
 
 func WriteOut(ctx context.Context, conn *net.UDPConn, rAddr *net.UDPAddr, ch <-chan []byte) error {
-	timer := time.NewTimer(time.Second * 30)
+	timer := time.NewTimer(time.Second)
 	for {
 		select {
 		case <-ctx.Done():
@@ -232,7 +265,7 @@ func WriteOut(ctx context.Context, conn *net.UDPConn, rAddr *net.UDPAddr, ch <-c
 			if n != len(b) {
 				return errors.New("invalid data")
 			}
-			timer.Reset(time.Second * 30)
+			timer.Reset(time.Second)
 
 		case <-timer.C:
 			b := connectRequest(makeId()).Bytes()

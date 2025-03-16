@@ -7,15 +7,18 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/yrasiq/p2p_messenger/client"
 	"github.com/yrasiq/p2p_messenger/terminal"
-	"github.com/yrasiq/udp_holepunch/log"
 	"github.com/yrasiq/udp_holepunch/stun"
+	"golang.org/x/term"
 )
 
 const defaultStunServerAddr = "stun.sipnet.ru:3478"
+const timeout = time.Second * 10
 
 func main() {
 	localAddr := flag.String("l", "", "local address")
@@ -122,9 +125,14 @@ func main() {
 		fmt.Println(err)
 		return
 	}
+	defer func() {
+		errDisc := client.Disconnect(conn, contactAddr)
+		if errDisc != nil {
+			fmt.Println(errDisc)
+		}
+	}()
 	fmt.Printf("Connected with: %s\n", contactAddr.String())
 
-	ctxWrite, cancelWrite := context.WithCancel(ctx)
 	writeCh := make(chan []byte)
 	printIncomCh := make(chan string)
 	printInputCh := make(chan string)
@@ -132,6 +140,19 @@ func main() {
 	inputDone := make(chan error, 1)
 	readDone := make(chan error, 1)
 	writeDone := make(chan error, 1)
+	lastReadTimeCh := make(chan time.Time)
+
+	state, err := term.MakeRaw(int(os.Stdin.Fd()))
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	defer func() {
+		errRestore := term.Restore(int(os.Stdin.Fd()), state)
+		if errRestore != nil {
+			fmt.Println(errRestore)
+		}
+	}()
 
 	go func() {
 		terminal.PrintMessages(printIncomCh, printInputCh)
@@ -142,36 +163,52 @@ func main() {
 		close(printInputCh)
 	}()
 	go func() {
-		readDone <- client.ReadIncome(conn, contactAddr, printIncomCh, writeCh)
+		readDone <- client.ReadIncome(conn, contactAddr, printIncomCh, writeCh, lastReadTimeCh)
 		close(printIncomCh)
+		close(lastReadTimeCh)
 	}()
 	go func() {
-		writeDone <- client.WriteOut(ctxWrite, conn, contactAddr, writeCh)
+		writeDone <- client.WriteOut(ctx, conn, contactAddr, writeCh)
 	}()
 
-	for printDone != nil || inputDone != nil || readDone != nil || writeDone != nil {
+	timeoutTimer := time.NewTimer(timeout)
+	done := make(chan os.Signal, 1)
+	signal.Notify(done, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
+	defer func() {
+		if err != nil {
+			fmt.Println(err)
+		}
+	}()
+	for {
 		select {
-		case <-printDone:
-			cancelWrite()
+		case <-done:
+			return
+
+		case <-timeoutTimer.C:
+			fmt.Println("connection timeout")
+			return
+
+		case _, ok := <-lastReadTimeCh:
+			if !ok {
+				return
+			}
 			err = nil
-			printDone = nil
+			timeoutTimer.Reset(timeout)
+
+		case <-printDone:
+			return
 
 		case err = <-inputDone:
-			conn.SetReadDeadline(time.Now())
-			inputDone = nil
+			return
 
 		case err = <-readDone:
-			os.Stdin.Close()
-			readDone = nil
+			if err == nil {
+				fmt.Println("contact exit")
+			}
+			return
 
 		case err = <-writeDone:
-			os.Stdin.Close()
-			conn.SetReadDeadline(time.Now())
-			writeDone = nil
-		}
-
-		if err != nil {
-			log.Logger.Error(err.Error())
+			return
 		}
 	}
 }

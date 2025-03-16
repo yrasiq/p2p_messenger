@@ -12,7 +12,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/yrasiq/p2p_messenger/client"
-	"golang.org/x/term"
 )
 
 func PrintPending(ctx context.Context) {
@@ -84,18 +83,12 @@ func PrintMessages(incCh, outCh <-chan string) {
 			} else {
 				lastInput = str
 			}
-
 		}
 		fmt.Printf("\r\033[K%s", str)
 	}
 }
 
 func Input(output chan<- string, writeCh chan<- []byte) error {
-	state, err := term.MakeRaw(int(os.Stdin.Fd()))
-	if err != nil {
-		return err
-	}
-	defer term.Restore(int(os.Stdin.Fd()), state)
 	var input []rune
 	for {
 		b := make([]byte, 4)

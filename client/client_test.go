@@ -16,7 +16,12 @@ func TestReadIncome(t *testing.T) {
 	}
 	defer readConn.Close()
 
-	writeConn, err := net.DialUDP("udp", &net.UDPAddr{IP: ip}, readConn.LocalAddr().(*net.UDPAddr))
+	rUDPAddr, ok := readConn.LocalAddr().(*net.UDPAddr)
+	if !ok {
+		t.Fail()
+		return
+	}
+	writeConn, err := net.DialUDP("udp", &net.UDPAddr{IP: ip}, rUDPAddr)
 	if err != nil {
 		t.Error(err)
 		return
@@ -25,17 +30,18 @@ func TestReadIncome(t *testing.T) {
 
 	printIncomCh := make(chan string, 1)
 	writeCh := make(chan []byte, 2)
+	lastReadCh := make(chan time.Time)
 
 	readDone := make(chan struct{})
 	go func() {
 		defer close(readDone)
-		readConn.SetReadDeadline(time.Now().Add(time.Second * 5))
-		errRead := ReadIncome(readConn, writeConn.LocalAddr(), printIncomCh, writeCh)
+		errRead := ReadIncome(readConn, writeConn.LocalAddr(), printIncomCh, writeCh, lastReadCh)
 		if !os.IsTimeout(errRead) {
 			t.Error(errRead)
 		}
 	}()
 
+	time.Sleep(time.Second)
 	for _, b := range [][]byte{
 		connectRequest(makeId()).Bytes(),
 		MakeMessage("hello").Bytes(),
@@ -46,6 +52,20 @@ func TestReadIncome(t *testing.T) {
 		}
 		if n != len(b) {
 			t.Error("error write")
+		}
+	}
+	timeout := time.NewTimer(time.Second)
+L:
+	for {
+		select {
+		case <-lastReadCh:
+			timeout.Reset(time.Second)
+		case <-timeout.C:
+			err = readConn.SetReadDeadline(time.Now())
+			if err != nil {
+				panic(err)
+			}
+			break L
 		}
 	}
 	<-readDone
